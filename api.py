@@ -1,15 +1,19 @@
-from mcp.server.fastapi import FastAPIMCPServer, tool
-from fastapi import FastAPI, Header, HTTPException, Request, Response
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from typing import Optional, Dict, Any
 import random
 from rapidfuzz import fuzz
 
-# Create MCP tool server instance
-mcp = FastAPIMCPServer()
-
-# FastAPI app (for REST endpoints)
-app = mcp.app
+# If MCP library is unavailable, stub decorator so deploy still works
+try:
+    from mcp import tool, FastAPIMCPServer
+    mcp_server = FastAPIMCPServer()
+    app = mcp_server.app
+except ImportError:
+    def tool(**kwargs):
+        def decorator(func): return func
+        return decorator
+    app = FastAPI()
 
 # =========================
 # CONFIG + DATA
@@ -31,8 +35,8 @@ UNIQUE_TIPS = {
         "Car": ["Plan routes to avoid traffic jams!", "Carpool to reduce your footprint."],
         "Bus": ["Travel off-peak to cut emissions.", "Support electric buses."],
         "Bicycle": ["Check tire pressure often.", "Use rechargeable lights."],
-        "Walking": ["Walk to nearby shops.", "Join walking clubs for fun!"],
-        "Electric Scooter": ["Charge off-peak.", "Recycle batteries properly."]
+        "Walking": ["Walk to nearby shops.", "Join walking clubs."],
+        "Electric Scooter": ["Charge off-peak.", "Recycle batteries."]
     },
     "shopping": {
         "Groceries & Food": ["Freeze leftovers.", "Buy seasonal produce."],
@@ -42,22 +46,22 @@ UNIQUE_TIPS = {
         "Beauty & Personal Care": ["Switch to refillables.", "Avoid microbeads."]
     },
     "electronics_freq": {
-        "Every year": ["Keep devices longer.", "Donate or recycle gadgets."],
+        "Every year": ["Keep devices longer.", "Donate electronics."],
         "Every 2-3 years": ["Update software.", "Recycle chargers."],
-        "Rarely": ["You're eco-conscious!", "Support take-back programs."]
+        "Rarely": ["Eco-conscious!", "Support take-back programs."]
     }
 }
 
 PRODUCT_DB = {
     "phone": {"carbon_score": 70, "alternatives": [
-        {"name": "Refurbished phone model X", "carbon_score": 50, "reason": "Avoids manufacturing emissions"},
-        {"name": "Phone Y recycled aluminium", "carbon_score": 55, "reason": "Uses recycled aluminium"}]},
+        {"name": "Refurbished phone X", "carbon_score": 50, "reason": "No new manufacturing"},
+        {"name": "Phone Y recycled aluminium", "carbon_score": 55, "reason": "Uses recycled materials"}]},
     "laptop": {"carbon_score": 150, "alternatives": [
-        {"name": "Eco laptop brand A", "carbon_score": 110, "reason": "Energy-efficient materials"},
-        {"name": "Refurbished laptop B", "carbon_score": 100, "reason": "Certified refurbished"}]},
+        {"name": "Eco laptop A", "carbon_score": 110, "reason": "Efficient + fair trade"},
+        {"name": "Refurb laptop B", "carbon_score": 100, "reason": "Certified refurbished"}]},
     "clothing": {"carbon_score": 40, "alternatives": [
-        {"name": "Organic cotton shirt", "carbon_score": 25, "reason": "Uses less water"},
-        {"name": "Recycled polyester jacket", "carbon_score": 30, "reason": "From recycled bottles"}]}
+        {"name": "Organic cotton shirt", "carbon_score": 25, "reason": "Less water use"},
+        {"name": "Recycled polyester jacket", "carbon_score": 30, "reason": "Recycled bottles"}]}
 }
 
 PRODUCT_KEYWORDS = {
@@ -72,9 +76,6 @@ FALLBACK_MSGS = [
     "Still learning that one. Try another?"
 ]
 
-# =========================
-# HELPERS
-# =========================
 def fallback() -> str:
     return random.choice(FALLBACK_MSGS)
 
@@ -105,10 +106,10 @@ async def validate_tool(authorization: str) -> str:
 async def about_tool() -> Dict[str, str]:
     return {
         "name": "EcoFit MCP Server",
-        "description": "An MCP server for EcoFit Carbon Coach — carbon footprint quizzes, eco tips, and product suggestions."
+        "description": "Calculate and compare carbon footprints, eco quizzes, and product suggestions."
     }
 
-@tool(name="carbon_score", description="Handle eco footprint quizzes, calculations, product suggestions, and challenges.")
+@tool(name="carbon_score", description="Handle eco footprint quizzes, calculations, product tips & challenges.")
 async def carbon_score_tool(
     mode: str,
     transport: Optional[str] = None,
@@ -121,21 +122,17 @@ async def carbon_score_tool(
     mode = (mode or "").lower()
     if mode == "quiz":
         return {
-            "intro": "🌍 Welcome to EcoFit Carbon Coach! Let's find out your digital footprint.",
+            "intro": "🌍 Welcome to EcoFit Carbon Coach!",
             "questions": [
-                {"id": "transport", "text": "How do you usually commute?", "options": list(CO2_FACTORS["transport"].keys())},
-                {"id": "shopping", "text": "What do you usually shop?", "options": list(CO2_FACTORS["shopping"].keys())},
-                {"id": "electronics_freq", "text": "How often do you buy electronics?", "options": list(CO2_FACTORS["electronics_freq"].keys())}
+                {"id": "transport", "text": "Commute method?", "options": list(CO2_FACTORS["transport"].keys())},
+                {"id": "shopping", "text": "Usual shopping?", "options": list(CO2_FACTORS["shopping"].keys())},
+                {"id": "electronics_freq", "text": "Electronics purchase frequency?", "options": list(CO2_FACTORS["electronics_freq"].keys())}
             ]
         }
     if mode == "calculate":
         if not (transport and shopping and electronics_freq):
             return {"message": "Please provide all answers."}
-        score = (
-            CO2_FACTORS["transport"][transport] +
-            CO2_FACTORS["shopping"][shopping] +
-            CO2_FACTORS["electronics_freq"][electronics_freq]
-        )
+        score = CO2_FACTORS["transport"][transport] + CO2_FACTORS["shopping"][shopping] + CO2_FACTORS["electronics_freq"][electronics_freq]
         tips = UNIQUE_TIPS["transport"][transport] + UNIQUE_TIPS["shopping"][shopping] + UNIQUE_TIPS["electronics_freq"][electronics_freq]
         return {"carbon_score": round(score, 2), "praise": "Good job!" if score < 4.5 else "Needs improvement!", "tips": tips}
     if mode == "product":
@@ -161,7 +158,7 @@ async def carbon_score_tool(
     return {"message": fallback()}
 
 # =========================
-# BACKWARD-COMPATIBLE REST ENDPOINTS
+# REST API ENDPOINTS
 # =========================
 @app.get("/mcp")
 async def mcp_root():
