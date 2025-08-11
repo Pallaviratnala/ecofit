@@ -35,7 +35,6 @@ async def greet(name: str = Field(description="User name")) -> str:
 
 async def main():
     print("🚀 MCP server running on /mcp/ path")
-    await mcp.run_async("streamable-http", host="0.0.0.0", port=8080, path="/mcp/")
-
+    await mcp.run_async("streamable-http", host="0.0.0.0", port=8080, path="/mcp")
 if __name__ == "__main__":
     asyncio.run(main())

@@ -4,10 +4,14 @@
     { "src": "main.py", "use": "@vercel/python" }
   ],
   "routes": [
-    { "src": "/mcp/(.*)", "dest": "main.py" }
+    {
+      "src": "/mcp/(.*)",
+      "dest": "main.py",
+      "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
+    }
   ],
   "env": {
-    "AUTH_TOKEN": "EcoFitToken12345",
-    "MY_NUMBER": "919441391981"
+    "AUTH_TOKEN": "@auth_token",
+    "MY_NUMBER": "@my_number"
   }
 }
