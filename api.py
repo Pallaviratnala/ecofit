@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Header, HTTPException, Request, status
+from fastapi import FastAPI, Header, HTTPException, Request, status, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field, validator
 import random
@@ -331,94 +331,83 @@ async def carbon_score(request: Request):
         )
 
         if not (answers.transport and answers.shopping and answers.electronics_freq):
-            return JSONResponse(content={"message": "Please provide answers for transport, shopping, and electronics_freq."}, status_code=400)
+            return JSONResponse(content={"message": "Please provide all answers for transport, shopping, and electronics_freq."}, status_code=400)
 
-        score = (
-            CO2_FACTORS["transport"][answers.transport] +
-            CO2_FACTORS["shopping"][answers.shopping] +
-            CO2_FACTORS["electronics_freq"][answers.electronics_freq]
-        ) * 100
+        # Calculate carbon footprint
+        transport_factor = CO2_FACTORS["transport"][answers.transport]
+        shopping_factor = CO2_FACTORS["shopping"][answers.shopping]
+        electronics_factor = CO2_FACTORS["electronics_freq"][answers.electronics_freq]
 
-        rank_percentile = random.randint(1, 100)
-        trees = round(score / 21.77)
-        car_km = round(score / 0.271)
+        total_score = transport_factor + shopping_factor + electronics_factor
 
-        if rank_percentile <= 5:
-            praise = (
-                f"🌟 Outstanding! You're in the top 5% of eco-heroes! "
-                f"{CATEGORY_EMOJIS['transport'][answers.transport]} {CATEGORY_EMOJIS['shopping'][answers.shopping]} {CATEGORY_EMOJIS['electronics_freq'][answers.electronics_freq]}"
-            )
-        elif rank_percentile <= 20:
-            praise = (
-                f"👏 Great job! You're among the top 20% of eco-conscious citizens! "
-                f"{CATEGORY_EMOJIS['transport'][answers.transport]} {CATEGORY_EMOJIS['shopping'][answers.shopping]} {CATEGORY_EMOJIS['electronics_freq'][answers.electronics_freq]}"
-            )
-        else:
-            praise = (
-                f"👍 Good effort! You're in the top {rank_percentile}% of people making green choices. "
-                f"{CATEGORY_EMOJIS['transport'][answers.transport]} {CATEGORY_EMOJIS['shopping'][answers.shopping]} {CATEGORY_EMOJIS['electronics_freq'][answers.electronics_freq]}"
-            )
-
+        # Personalized tips
         tips = []
-        tips.extend(random.sample(UNIQUE_TIPS["transport"].get(answers.transport, ["Try reducing your transport emissions."]), 2))
-        tips.extend(random.sample(UNIQUE_TIPS["shopping"].get(answers.shopping, ["Shop more sustainably."]), 2))
-        tips.extend(random.sample(UNIQUE_TIPS["electronics_freq"].get(answers.electronics_freq, ["Reduce electronic waste."]), 1))
-        random.shuffle(tips)
+        for category, choice in [("transport", answers.transport), ("shopping", answers.shopping), ("electronics_freq", answers.electronics_freq)]:
+            tips += UNIQUE_TIPS[category].get(choice, [])
+
+        # Sample praise messages based on score
+        if total_score < 2.5:
+            praise = "Wow! You are in the top 5% eco-conscious people! 🌟 Keep up the great sustainable lifestyle!"
+        elif total_score < 4.5:
+            praise = "Good job! You're doing well in reducing your carbon footprint. Keep pushing! 💪"
+        else:
+            praise = "There's room for improvement, but every step counts! Let's grow greener together! 🌱"
 
         return JSONResponse(content={
-            "score": round(score, 1),
-            "rank": praise,
-            "equivalence": f"Your yearly footprint equals planting {trees} trees 🌳 or travelling {car_km} km in a petrol car 🚗.",
+            "carbon_score": round(total_score, 2),
+            "praise": praise,
             "tips": tips,
-            "next_step": "Thinking about buying something? Send its name or URL with mode='product' to get its carbon score and greener alternatives! 🌿"
+            "details": {
+                "transport": {"choice": answers.transport, "emoji": CATEGORY_EMOJIS["transport"][answers.transport], "factor": transport_factor},
+                "shopping": {"choice": answers.shopping, "emoji": CATEGORY_EMOJIS["shopping"][answers.shopping], "factor": shopping_factor},
+                "electronics_freq": {"choice": answers.electronics_freq, "emoji": CATEGORY_EMOJIS["electronics_freq"][answers.electronics_freq], "factor": electronics_factor}
+            }
         })
 
     if mode == "product":
-        product_name = data.product
-        if not product_name:
-            return JSONResponse(content={"message": "Please provide a product name or URL to analyze."}, status_code=400)
+        product = (data.product or "").lower().strip()
+        if not product:
+            return JSONResponse(content={"message": "Please provide a product to check."}, status_code=400)
 
-        category = find_product_category(product_name)
-        if not category:
-            logger.info(f"Product '{product_name}' not recognized")
-            return JSONResponse(content={"message": get_fallback_response()})
+        category = find_product_category(product)
+        if not category or category not in PRODUCT_DB:
+            return JSONResponse(content={"message": get_fallback_response()}, status_code=404)
 
-        product_info = PRODUCT_DB.get(category)
-        if not product_info:
-            return JSONResponse(content={"message": get_fallback_response()})
-
-        base_score = product_info["carbon_score"]
-        alternatives = product_info["alternatives"]
-
-        better_alternatives = [alt for alt in alternatives if alt["carbon_score"] <= base_score * 0.8]
-
-        alt_lines = ""
-        for alt in better_alternatives:
-            alt_lines += f"• {alt['name']} (carbon score: {alt['carbon_score']}): {alt['reason']}\n"
+        product_info = PRODUCT_DB[category]
+        alternatives = product_info.get("alternatives", [])
 
         return JSONResponse(content={
-            "product": product_name,
-            "carbon_score": base_score,
-            "message": (
-                f"The estimated carbon footprint for your product is {base_score} kg CO₂ per year of use. "
-                f"Here are greener alternatives that can reduce your footprint by at least 20%:\n{alt_lines}"
-            ),
-            "advice": "Choosing these alternatives helps you reduce your environmental impact significantly. 🌿",
-            "tip": "Buying refurbished or sustainably-made products is a great step toward a greener future! 🌎"
+            "product": product,
+            "carbon_score": product_info["carbon_score"],
+            "alternatives": alternatives,
+            "message": f"Here's your carbon score for '{product}'. Consider these eco-friendly alternatives!"
         })
 
     if mode == "challenge":
+        if data.my_score is None or data.friend_score is None:
+            return JSONResponse(content={"message": "Please provide both your score and your friend's score."}, status_code=400)
+
         my_score = data.my_score
         friend_score = data.friend_score
-        if my_score is None or friend_score is None:
-            return JSONResponse(content={"message": "Please provide both my_score and friend_score for challenge mode."}, status_code=400)
 
         if my_score < friend_score:
-            msg = "🎉 You're already beating your friend — keep it up! 💪"
+            msg = "You are more eco-friendly than your friend! Keep it up! 🌟"
+        elif my_score > friend_score:
+            msg = "Your friend is more eco-conscious. Challenge accepted! Let's improve! 💪"
         else:
-            improvement = round((my_score - friend_score) / my_score * 100, 1)
-            msg = f"Swap 2 car trips a week for cycling to beat them by {improvement}%! 🚴‍♂️🚗"
+            msg = "You and your friend have the same carbon footprint. Teamwork makes the dream work! 🤝"
 
-        return JSONResponse(content={"message": msg})
+        return JSONResponse(content={"challenge_result": msg})
 
-    return JSONResponse(content={"message": "Invalid mode. Use quiz, calculate, product, or challenge."}, status_code=400)
+    return JSONResponse(content={"message": get_fallback_response()}, status_code=400)
+
+# Root route to avoid 404 on '/'
+@app.get("/")
+async def root():
+    return {"message": "Welcome to EcoFit Carbon Coach API 🌍💚"}
+
+# Favicon handler to avoid 404 on '/favicon.ico'
+@app.get("/favicon.ico")
+async def favicon():
+    return Response(status_code=204)
+
