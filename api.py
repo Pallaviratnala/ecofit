@@ -189,26 +189,14 @@ PRODUCT_DB = {
 }
 
 PRODUCT_KEYWORDS = {
-    "phone": [
-        "phone", "mobile", "cellphone", "smartphone", "iphone", "android phone", "refurbished phone",
-        "handset", "cell", "mobile phone"
-    ],
-    "laptop": [
-        "laptop", "notebook", "macbook", "chromebook", "refurbished laptop", "computer", "pc", "ultrabook"
-    ],
-    "clothing": [
-        "clothing", "clothes", "shirt", "t-shirt", "jacket", "jeans", "dress", "pants", "apparel", "outfit",
-        "garment", "refurbished clothes", "organic cotton"
-    ],
-    "home": [
-        "furniture", "sofa", "table", "chair", "bed", "home decor", "curtain", "carpet", "lamp", "cushion"
-    ],
-    "electronics": [
-        "electronics", "gadget", "device", "camera", "headphone", "speaker", "tv", "monitor", "tablet", "console"
-    ],
-    "beauty": [
-        "beauty", "cosmetic", "makeup", "skincare", "cream", "lotion", "perfume", "personal care"
-    ],
+    "phone": ["phone", "mobile", "cellphone", "smartphone", "iphone", "android phone", "refurbished phone",
+              "handset", "cell", "mobile phone"],
+    "laptop": ["laptop", "notebook", "macbook", "chromebook", "refurbished laptop", "computer", "pc", "ultrabook"],
+    "clothing": ["clothing", "clothes", "shirt", "t-shirt", "jacket", "jeans", "dress", "pants", "apparel", "outfit",
+                 "garment", "refurbished clothes", "organic cotton"],
+    "home": ["furniture", "sofa", "table", "chair", "bed", "home decor", "curtain", "carpet", "lamp", "cushion"],
+    "electronics": ["electronics", "gadget", "device", "camera", "headphone", "speaker", "tv", "monitor", "tablet", "console"],
+    "beauty": ["beauty", "cosmetic", "makeup", "skincare", "cream", "lotion", "perfume", "personal care"]
 }
 
 FALLBACK_RESPONSES = [
@@ -222,8 +210,6 @@ FALLBACK_RESPONSES = [
 def get_fallback_response() -> str:
     return random.choice(FALLBACK_RESPONSES)
 
-# Pydantic Models
-
 class AnswersModel(BaseModel):
     transport: Optional[str]
     shopping: Optional[str]
@@ -231,52 +217,50 @@ class AnswersModel(BaseModel):
 
     @validator('transport')
     def check_transport(cls, v):
-        if v not in CO2_FACTORS["transport"]:
+        if v is not None and v not in CO2_FACTORS["transport"]:
             raise ValueError(f"Invalid transport option '{v}'")
         return v
 
     @validator('shopping')
     def check_shopping(cls, v):
-        if v not in CO2_FACTORS["shopping"]:
+        if v is not None and v not in CO2_FACTORS["shopping"]:
             raise ValueError(f"Invalid shopping option '{v}'")
         return v
 
     @validator('electronics_freq')
     def check_electronics_freq(cls, v):
-        if v not in CO2_FACTORS["electronics_freq"]:
+        if v is not None and v not in CO2_FACTORS["electronics_freq"]:
             raise ValueError(f"Invalid electronics frequency '{v}'")
         return v
 
 class CarbonScoreRequest(BaseModel):
     mode: str = Field(..., description="Mode of the request: quiz, calculate, product, challenge")
-    answers: Optional[AnswersModel]
-    transport: Optional[str]
-    shopping: Optional[str]
-    electronics_freq: Optional[str]
-    product: Optional[str]
-    my_score: Optional[float]
-    friend_score: Optional[float]
-
-# Auth endpoint
+    answers: Optional[AnswersModel] = None
+    transport: Optional[str] = None
+    shopping: Optional[str] = None
+    electronics_freq: Optional[str] = None
+    product: Optional[str] = None
+    my_score: Optional[float] = None
+    friend_score: Optional[float] = None
 
 @app.post("/mcp/validate", response_class=PlainTextResponse)
 async def validate(authorization: str = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
         logger.warning("Unauthorized access attempt: Missing/invalid header")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid Authorization header")
-    
     token = authorization.split(" ")[1]
     phone = VALID_TOKENS.get(token)
     if not phone:
         logger.warning(f"Unauthorized token attempt: {token}")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid token")
-
     logger.info(f"Authorized token for phone {phone}")
-    return phone
+    return PlainTextResponse(content=phone, headers={
+        "Cache-Control": "no-store",
+        "Pragma": "no-cache"
+    })
 
 @app.get("/status")
 async def status():
-    logger.info("Status check requested")
     return {"status": "ok", "version": "2.0.0"}
 
 def find_product_category(product_str: str) -> Optional[str]:
@@ -286,42 +270,35 @@ def find_product_category(product_str: str) -> Optional[str]:
     for category, keywords in PRODUCT_KEYWORDS.items():
         for kw in keywords:
             score = fuzz.partial_ratio(kw, product_str)
-            if score > highest_score and score >= 80:  # threshold for fuzzy matching
+            if score > highest_score and score >= 80:
                 highest_score = score
                 best_match = category
-    logger.debug(f"Product '{product_str}' matched category '{best_match}' with score {highest_score}")
     return best_match
 
 @app.post("/mcp/carbon_score")
 async def carbon_score(request: Request):
     try:
         body = await request.json()
-        logger.info(f"Received carbon_score request: {body}")
-    except Exception as e:
-        logger.error(f"Invalid JSON: {e}")
-        return JSONResponse(content={"message": "Invalid JSON format. Please send valid JSON."}, status_code=400)
+    except Exception:
+        return JSONResponse(content={"message": "Invalid JSON format."}, status_code=400)
 
-    try:
-        data = CarbonScoreRequest(**body)
-    except Exception as e:
-        logger.error(f"Validation error: {e}")
-        return JSONResponse(content={"message": f"Validation error: {e}"}, status_code=400)
-
-    mode = data.mode.lower()
+    mode = (body.get("mode") or "").lower()
 
     if mode == "quiz":
         return JSONResponse(content={
             "intro": "🌍 Welcome to EcoFit Carbon Coach! Let's find out your digital footprint with a few simple questions.",
             "questions": [
-                {"id": "transport", "text": "How do you usually commute?",
-                 "options": list(CO2_FACTORS["transport"].keys())},
-                {"id": "shopping", "text": "What do you shop usually?",
-                 "options": list(CO2_FACTORS["shopping"].keys())},
-                {"id": "electronics_freq", "text": "How often do you buy new electronics?",
-                 "options": list(CO2_FACTORS["electronics_freq"].keys())}
+                {"id": "transport", "text": "How do you usually commute?", "options": list(CO2_FACTORS["transport"].keys())},
+                {"id": "shopping", "text": "What do you shop usually?", "options": list(CO2_FACTORS["shopping"].keys())},
+                {"id": "electronics_freq", "text": "How often do you buy new electronics?", "options": list(CO2_FACTORS["electronics_freq"].keys())}
             ],
             "note": "After completing, we'll show your footprint and tips tailored just for you! 🌱"
         })
+
+    try:
+        data = CarbonScoreRequest(**body)
+    except Exception as e:
+        return JSONResponse(content={"message": f"Validation error: {e}"}, status_code=400)
 
     if mode == "calculate":
         answers = data.answers or AnswersModel(
@@ -329,85 +306,45 @@ async def carbon_score(request: Request):
             shopping=data.shopping,
             electronics_freq=data.electronics_freq
         )
-
         if not (answers.transport and answers.shopping and answers.electronics_freq):
-            return JSONResponse(content={"message": "Please provide all answers for transport, shopping, and electronics_freq."}, status_code=400)
-
-        # Calculate carbon footprint
-        transport_factor = CO2_FACTORS["transport"][answers.transport]
-        shopping_factor = CO2_FACTORS["shopping"][answers.shopping]
-        electronics_factor = CO2_FACTORS["electronics_freq"][answers.electronics_freq]
-
-        total_score = transport_factor + shopping_factor + electronics_factor
-
-        # Personalized tips
-        tips = []
-        for category, choice in [("transport", answers.transport), ("shopping", answers.shopping), ("electronics_freq", answers.electronics_freq)]:
-            tips += UNIQUE_TIPS[category].get(choice, [])
-
-        # Sample praise messages based on score
-        if total_score < 2.5:
-            praise = "Wow! You are in the top 5% eco-conscious people! 🌟 Keep up the great sustainable lifestyle!"
-        elif total_score < 4.5:
-            praise = "Good job! You're doing well in reducing your carbon footprint. Keep pushing! 💪"
-        else:
-            praise = "There's room for improvement, but every step counts! Let's grow greener together! 🌱"
-
+            return JSONResponse(content={"message": "Please provide all answers."}, status_code=400)
+        total_score = CO2_FACTORS["transport"][answers.transport] + CO2_FACTORS["shopping"][answers.shopping] + CO2_FACTORS["electronics_freq"][answers.electronics_freq]
+        tips = UNIQUE_TIPS["transport"][answers.transport] + UNIQUE_TIPS["shopping"][answers.shopping] + UNIQUE_TIPS["electronics_freq"][answers.electronics_freq]
+        praise = "Wow! You are in the top 5% eco-conscious people! 🌟" if total_score < 2.5 else \
+                 "Good job! You're doing well! 💪" if total_score < 4.5 else \
+                 "There's room for improvement! 🌱"
         return JSONResponse(content={
             "carbon_score": round(total_score, 2),
             "praise": praise,
-            "tips": tips,
-            "details": {
-                "transport": {"choice": answers.transport, "emoji": CATEGORY_EMOJIS["transport"][answers.transport], "factor": transport_factor},
-                "shopping": {"choice": answers.shopping, "emoji": CATEGORY_EMOJIS["shopping"][answers.shopping], "factor": shopping_factor},
-                "electronics_freq": {"choice": answers.electronics_freq, "emoji": CATEGORY_EMOJIS["electronics_freq"][answers.electronics_freq], "factor": electronics_factor}
-            }
+            "tips": tips
         })
 
     if mode == "product":
-        product = (data.product or "").lower().strip()
-        if not product:
-            return JSONResponse(content={"message": "Please provide a product to check."}, status_code=400)
-
-        category = find_product_category(product)
+        if not data.product:
+            return JSONResponse(content={"message": "Please provide a product."}, status_code=400)
+        category = find_product_category(data.product)
         if not category or category not in PRODUCT_DB:
             return JSONResponse(content={"message": get_fallback_response()}, status_code=404)
-
-        product_info = PRODUCT_DB[category]
-        alternatives = product_info.get("alternatives", [])
-
         return JSONResponse(content={
-            "product": product,
-            "carbon_score": product_info["carbon_score"],
-            "alternatives": alternatives,
-            "message": f"Here's your carbon score for '{product}'. Consider these eco-friendly alternatives!"
+            "product": data.product,
+            "carbon_score": PRODUCT_DB[category]["carbon_score"],
+            "alternatives": PRODUCT_DB[category]["alternatives"]
         })
 
     if mode == "challenge":
         if data.my_score is None or data.friend_score is None:
-            return JSONResponse(content={"message": "Please provide both your score and your friend's score."}, status_code=400)
-
-        my_score = data.my_score
-        friend_score = data.friend_score
-
-        if my_score < friend_score:
-            msg = "You are more eco-friendly than your friend! Keep it up! 🌟"
-        elif my_score > friend_score:
-            msg = "Your friend is more eco-conscious. Challenge accepted! Let's improve! 💪"
-        else:
-            msg = "You and your friend have the same carbon footprint. Teamwork makes the dream work! 🤝"
-
+            return JSONResponse(content={"message": "Please provide both scores."}, status_code=400)
+        msg = "You are more eco-friendly! 🌟" if data.my_score < data.friend_score else \
+              "Your friend is more eco-conscious. 💪" if data.my_score > data.friend_score else \
+              "Same footprint. Team effort! 🤝"
         return JSONResponse(content={"challenge_result": msg})
 
     return JSONResponse(content={"message": get_fallback_response()}, status_code=400)
 
-# Root route to avoid 404 on '/'
 @app.get("/")
 async def root():
     return {"message": "Welcome to EcoFit Carbon Coach API 🌍💚"}
 
-# Favicon handler to avoid 404 on '/favicon.ico'
 @app.get("/favicon.ico")
 async def favicon():
     return Response(status_code=204)
-
