@@ -1,18 +1,23 @@
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import PlainTextResponse, JSONResponse
 
 app = FastAPI()
 
-# Token to phone mapping - replace with your own secure auth later
+# Token to phone mapping
 VALID_TOKENS = {
     "EcoFitToken12345": "919441391981"
 }
 
+# Simple CO2 emission factors (kg CO2 per unit)
+EMISSION_FACTORS = {
+    "phone": 70.0,
+    "laptop": 200.0,
+    "tshirt": 10.0,
+    "shoes": 14.0
+}
+
 @app.post("/mcp/validate", response_class=PlainTextResponse)
-async def validate(
-    authorization: str = Header(None),
-    json: bool = Query(False, description="Set to true to get JSON response")
-):
+async def validate(authorization: str = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     
@@ -21,20 +26,25 @@ async def validate(
     if not phone:
         raise HTTPException(status_code=403, detail="Invalid token")
 
-    if json:  # Debug-friendly JSON output
-        return JSONResponse(content={"phone": phone})
-    return phone  # MCP expects plain text by default
-
+    return phone
 
 @app.post("/mcp/carbon_score")
 async def carbon_score(data: dict):
-    # Parse data and calculate carbon footprint
-    # For demo, returning fixed carbon score & message
-    return JSONResponse(content={
-        "carbon_score": 123.45,
-        "message": "Sample carbon footprint calculated"
-    })
+    product = data.get("product", "").lower()
+    quantity = data.get("quantity", 1)
 
+    if product not in EMISSION_FACTORS:
+        raise HTTPException(status_code=400, detail="Unknown product type")
+
+    # Calculate carbon footprint
+    carbon_score = EMISSION_FACTORS[product] * quantity
+
+    return JSONResponse(content={
+        "product": product,
+        "quantity": quantity,
+        "carbon_score": round(carbon_score, 2),
+        "message": f"Estimated carbon footprint for {quantity} {product}(s) is {round(carbon_score, 2)} kg CO₂."
+    })
 
 @app.get("/status")
 async def status():
