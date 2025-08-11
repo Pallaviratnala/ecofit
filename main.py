@@ -1,21 +1,17 @@
 import asyncio
 import os
-from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.bearer import BearerAuthProvider, RSAKeyPair
 from mcp.server.auth.provider import AccessToken
 from pydantic import Field
 
-# Load environment variables
-load_dotenv()
-
+# Load env variables from system (Vercel injects env vars automatically)
 TOKEN = os.environ.get("AUTH_TOKEN")
 MY_NUMBER = os.environ.get("MY_NUMBER")
 
-assert TOKEN, "AUTH_TOKEN missing in .env"
-assert MY_NUMBER, "MY_NUMBER missing in .env"
+assert TOKEN, "AUTH_TOKEN missing"
+assert MY_NUMBER, "MY_NUMBER missing"
 
-# Auth Provider
 class SimpleBearerAuthProvider(BearerAuthProvider):
     def __init__(self, token: str):
         k = RSAKeyPair.generate()
@@ -27,25 +23,18 @@ class SimpleBearerAuthProvider(BearerAuthProvider):
             return AccessToken(token=token, client_id="puch-client", scopes=["*"], expires_at=None)
         return None
 
-# MCP Server Initialization
 mcp = FastMCP("EcoFit MCP Server", auth=SimpleBearerAuthProvider(TOKEN))
 
-# Validate Tool (required)
 @mcp.tool
 async def validate() -> str:
-    """
-    Returns the owner's phone number in the required format for Puch AI authentication.
-    """
     return MY_NUMBER
 
-# Example tool - say hello
 @mcp.tool
 async def greet(name: str = Field(description="User name")) -> str:
     return f"Hello, {name}! Welcome to EcoFit MCP Server."
 
-# Run MCP Server with path="/mcp/"
 async def main():
-    print("🚀 Starting MCP server on http://0.0.0.0:8080/mcp/")
+    print("🚀 MCP server running on /mcp/ path")
     await mcp.run_async("streamable-http", host="0.0.0.0", port=8080, path="/mcp/")
 
 if __name__ == "__main__":
