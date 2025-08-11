@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import PlainTextResponse, JSONResponse
 
 app = FastAPI()
@@ -9,7 +9,10 @@ VALID_TOKENS = {
 }
 
 @app.post("/mcp/validate", response_class=PlainTextResponse)
-async def validate(authorization: str = Header(None)):
+async def validate(
+    authorization: str = Header(None),
+    json: bool = Query(False, description="Set to true to get JSON response")
+):
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     
@@ -18,14 +21,21 @@ async def validate(authorization: str = Header(None)):
     if not phone:
         raise HTTPException(status_code=403, detail="Invalid token")
 
-    # Return phone number as plain text (MCP expects plain string)
-    return phone
+    if json:  # Debug-friendly JSON output
+        return JSONResponse(content={"phone": phone})
+    return phone  # MCP expects plain text by default
+
 
 @app.post("/mcp/carbon_score")
 async def carbon_score(data: dict):
-    # Here you can parse data and calculate carbon footprint
+    # Parse data and calculate carbon footprint
     # For demo, returning fixed carbon score & message
     return JSONResponse(content={
         "carbon_score": 123.45,
         "message": "Sample carbon footprint calculated"
     })
+
+
+@app.get("/status")
+async def status():
+    return {"status": "ok", "version": "1.0.0"}
