@@ -131,7 +131,7 @@ async def mcp_root():
     return {
         "name": "EcoFit MCP Server",
         "description": "Carbon footprint quiz, calculation, product suggestions",
-        "tools": ["validate", "carbon_score"]
+        "tools": ["validate", "carbon_score", "about"]
     }
 
 @app.post("/mcp")
@@ -139,8 +139,22 @@ async def mcp_post():
     return {
         "tools": [
             {"name": "validate", "description": "Validate token and return phone number"},
-            {"name": "carbon_score", "description": "Quiz, footprint calc, product tips"}
+            {"name": "carbon_score", "description": "Quiz, footprint calc, product tips"},
+            {"name": "about", "description": "Server metadata"}
         ]
+    }
+
+# ==== ADD ABOUT TOOL ====
+@app.post("/mcp/about")
+async def about():
+    return {
+        "name": "EcoFit MCP Server",
+        "description": (
+            "An MCP server for EcoFit Carbon Coach — provides tools to calculate "
+            "and compare digital carbon footprints, take sustainability quizzes, "
+            "get eco-friendly product suggestions, and motivate green lifestyle "
+            "choices with actionable eco-tips."
+        )
     }
 
 # ==== MCP TOOLS ====
